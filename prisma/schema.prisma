@@ -1,0 +1,193 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+model User {
+  id            String   @id
+  name          String
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  image         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+  quizzes       Quiz[]
+}
+model Session {
+  id        String @id
+  expiresAt DateTime
+  token     String @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+}
+model Account {
+  id                    String @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  @@index([userId])
+  @@unique([providerId, accountId])
+}
+model Verification {
+  id         String @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  @@index([identifier])
+}
+model RateLimit {
+  id          String @id @default(cuid())
+  key         String @unique
+  count       Int
+  lastRequest BigInt
+}
+model RequestBucket {
+  key       String @id
+  count     Int @default(1)
+  expiresAt DateTime
+  @@index([expiresAt])
+}
+enum QuizStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+enum Visibility {
+  PUBLIC
+  UNLISTED
+  PRIVATE
+}
+model Quiz {
+  id           String @id @default(cuid())
+  ownerId      String
+  owner        User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  title        String
+  description  String @default("")
+  creatorName  String
+  category     String
+  slug         String @unique
+  status       QuizStatus @default(DRAFT)
+  visibility   Visibility @default(UNLISTED)
+  draft        Json
+  revision     Int @default(0)
+  activeVersionId String? @unique
+  activeVersion QuizVersion? @relation("ActiveVersion", fields: [activeVersionId], references: [id], onDelete: SetNull)
+  versions     QuizVersion[] @relation("QuizVersions")
+  attempts     QuizAttempt[]
+  reports      Report[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  publishedAt  DateTime?
+  @@index([ownerId, updatedAt])
+  @@index([status, visibility, publishedAt])
+}
+model QuizVersion {
+  id            String @id @default(cuid())
+  quizId        String
+  quiz          Quiz @relation("QuizVersions", fields: [quizId], references: [id], onDelete: Cascade)
+  activeFor     Quiz? @relation("ActiveVersion")
+  versionNumber Int
+  snapshot      Json
+  questions     Question[]
+  attempts      QuizAttempt[]
+  createdAt     DateTime @default(now())
+  @@unique([quizId, versionNumber])
+}
+model Question {
+  id            String @id
+  quizVersionId String
+  quizVersion   QuizVersion @relation(fields: [quizVersionId], references: [id], onDelete: Cascade)
+  text          String
+  explanation   String @default("")
+  position      Int
+  options       AnswerOption[]
+  answers       AttemptAnswer[]
+  @@unique([quizVersionId, position])
+}
+model AnswerOption {
+  id         String @id
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  text       String
+  isCorrect  Boolean
+  position   Int
+  answers    AttemptAnswer[]
+  @@unique([questionId, position])
+}
+enum AttemptStatus {
+  STARTED
+  COMPLETED
+}
+model QuizAttempt {
+  id                  String @id @default(cuid())
+  quizId              String
+  quiz                Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  quizVersionId       String
+  quizVersion         QuizVersion @relation(fields: [quizVersionId], references: [id], onDelete: Cascade)
+  participantNickname String
+  guestHash           String
+  status              AttemptStatus @default(STARTED)
+  score               Int @default(0)
+  correctCount        Int @default(0)
+  totalQuestions      Int
+  questionOrder       String[]
+  hidden              Boolean @default(false)
+  startedAt           DateTime @default(now())
+  completedAt         DateTime?
+  answers             AttemptAnswer[]
+  @@index([quizId, status, score(sort: Desc), correctCount(sort: Desc), completedAt, id])
+  @@index([quizId, guestHash])
+  @@index([quizVersionId])
+  @@index([startedAt])
+}
+model AttemptAnswer {
+  id               String @id @default(cuid())
+  attemptId        String
+  attempt          QuizAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId       String
+  question         Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  selectedOptionId String
+  selectedOption   AnswerOption @relation(fields: [selectedOptionId], references: [id], onDelete: Cascade)
+  isCorrect        Boolean
+  @@unique([attemptId, questionId])
+}
+model QuizTemplate {
+  id          String @id @default(cuid())
+  slug        String @unique
+  name        String
+  description String
+  category    String
+  emoji       String
+  color       String
+  content     Json
+  isFeatured  Boolean @default(false)
+}
+model Report {
+  id        String @id @default(cuid())
+  quizId    String
+  quiz      Quiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  reason    String
+  createdAt DateTime @default(now())
+  @@index([quizId, createdAt])
+}
